@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-summariser
+  namespace: {{ .Release.Namespace }}
+  labels:
+    component: file-summariser
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: file-summariser
+  template:
+    metadata:
+      labels:
+        component: file-summariser
+        factory-plus.service: file-summariser
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: krb5-conf
+          configMap:
+            name: krb5-conf
+        - name: krb5-keytabs
+          secret:
+            secretName: file-summariser-keytabs
+        - name: scratch
+          emptyDir:
+            sizeLimit: {{ .Values.scratchSize }}
+
+      containers:
+        - name: file-summariser
+          image: {{ include "addon-file-summariser.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [ "/usr/bin/k5start", "-Uf", "/keytabs/client" ]
+          args: [ "node", "bin/summariser.js" ]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: KRB5_CONFIG
+              value: /config/krb5-conf/krb5.conf
+            - name: CLIENT_KEYTAB
+              value: /keytabs/client
+            - name: VERBOSE
+              value: {{ .Values.verbosity | required "values.verbosity" }}
+            - name: DIRECTORY_URL
+              value: {{ .Values.factoryPlus.directoryUrl | required "values.factoryPlus.directoryUrl is required!" }}
+            - name: INFLUX_URL
+              value: {{ .Values.influx.url | required "values.influx.url is required!" }}
+            - name: INFLUX_ORG
+              value: {{ .Values.influx.org | quote }}
+            - name: INFLUX_BUCKET
+              value: {{ .Values.influx.bucket | quote }}
+            - name: INFLUX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.influx.tokenSecret.name }}
+                  key: {{ .Values.influx.tokenSecret.key }}
+            - name: BATCH_SIZE
+              value: {{ .Values.batchSize | quote }}
+            - name: FLUSH_INTERVAL
+              value: {{ .Values.flushInterval | quote }}
+            - name: SCRATCH_DIR
+              value: /scratch
+            - name: MAX_CONCURRENT_JOBS
+              value: {{ .Values.maxConcurrentJobs | quote }}
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size={{ .Values.nodeMaxOldSpaceSizeMb }}"
+          volumeMounts:
+            - mountPath: /config/krb5-conf
+              name: krb5-conf
+            - mountPath: /keytabs
+              name: krb5-keytabs
+            - mountPath: /scratch
+              name: scratch

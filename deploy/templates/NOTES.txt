@@ -1,0 +1,16 @@
+addon-file-summariser has been installed into namespace {{ .Release.Namespace }}.
+
+This is an optional Factory+ add-on, not part of core ACS. It expects:
+
+  - The core deployment's krb-keys-operator to be watching this namespace
+    (true by default for any `addon-*` namespace).
+  - An `influxdb-auth` secret (or whatever you set influx.tokenSecret.name
+    to) to already exist in this namespace, copied from the core
+    deployment.
+  - Core's acs-service-setup to have applied
+    acs-service-setup/dumps/addon-file-summariser.yaml, registering this
+    service's ConfigDB/Auth objects.
+
+Check `kubectl -n {{ .Release.Namespace }} get pods` and the KerberosKey
+status (`kubectl -n {{ .Release.Namespace }} get krb sv1filesummariser`) to
+confirm the identity was issued correctly.

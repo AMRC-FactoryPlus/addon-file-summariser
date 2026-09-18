@@ -1,0 +1,27 @@
+{
+  "name": "@amrc-factoryplus/rx-util",
+  "version": "0.0.3",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AMRC-FactoryPlus/amrc-connectivity-stack.git",
+    "directory": "lib/js-rx-util"
+  },
+  "main": "lib/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "immutable": "^5.0.0-beta.5",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0"
+  }
+}

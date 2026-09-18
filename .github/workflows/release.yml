@@ -1,0 +1,115 @@
+# Build and publish addon-file-summariser.
+#
+# Self-contained: unlike a service still living in the amrc-connectivity-stack
+# monorepo, this does not call out to any shared composite action or
+# reusable workflow - everything this needs is in this file so it keeps
+# working unchanged once this directory becomes the root of its own repo.
+#
+# Triggered by publishing a GitHub release tagged vX.Y.Z. Builds and
+# pushes the container image to ghcr.io, then packages and pushes this
+# chart to the same registry's OCI chart store.
+
+name: Build & Release
+
+env:
+  BASE_JS_VERSION: v4.1.0
+  IMAGE: ghcr.io/amrc-factoryplus/addon-file-summariser
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: echo "version=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.3.0
+      - name: Setup build
+        uses: docker/setup-buildx-action@v3
+      - name: Login to registry
+        # docker/login-action has no built-in retry and ghcr.io's token
+        # endpoint flakes often enough that a single timeout costs us a
+        # build. Roll our own retry loop with linear backoff.
+        shell: bash
+        env:
+          DOCKER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_USER: ${{ github.actor }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            printf '%s' "$DOCKER_TOKEN" \
+              | docker login ghcr.io -u "$DOCKER_USER" --password-stdin \
+              && exit 0
+            backoff=$((attempt * 5))
+            echo "docker login attempt $attempt failed; retrying in ${backoff}s" >&2
+            sleep $backoff
+          done
+          echo "docker login failed after 5 attempts" >&2
+          exit 1
+
+      - name: Build and push
+        id: build-and-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            base_version=${{ env.BASE_JS_VERSION }}
+            revision=${{ steps.version.outputs.version }} (${{ github.sha }})
+
+      - name: Sign image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign sign --yes "${{ env.IMAGE }}:${{ steps.version.outputs.version }}@${{ steps.build-and-push.outputs.digest }}"
+
+  publish-chart:
+    needs: build-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      - name: Login to registry
+        shell: bash
+        env:
+          DOCKER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_USER: ${{ github.actor }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            printf '%s' "$DOCKER_TOKEN" \
+              | helm registry login ghcr.io -u "$DOCKER_USER" --password-stdin \
+              && exit 0
+            backoff=$((attempt * 5))
+            echo "helm registry login attempt $attempt failed; retrying in ${backoff}s" >&2
+            sleep $backoff
+          done
+          echo "helm registry login failed after 5 attempts" >&2
+          exit 1
+      - name: Package and push chart
+        run: |
+          VERSION="${{ needs.build-image.outputs.version }}"
+          VERSION="${VERSION#v}"
+          helm package -u -d /tmp/chart --version="$VERSION" --app-version="$VERSION" deploy
+          helm push "/tmp/chart/addon-file-summariser-${VERSION}.tgz" oci://ghcr.io/amrc-factoryplus/charts

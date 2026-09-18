@@ -1,0 +1,22 @@
+# Requires the core deployment's krb-keys-operator to be watching this
+# namespace. The operator's default WATCH_NAMESPACES pattern includes
+# `addon-*`, so installing this chart into a namespace named
+# `addon-<something>` (as documented in the README) needs no core-side
+# configuration change.
+apiVersion: factoryplus.app.amrc.co.uk/v1
+kind: KerberosKey
+metadata:
+  name: sv1filesummariser
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: Random
+  principal: sv1filesummariser@{{ .Values.factoryPlus.realm | required "values.factoryPlus.realm is required!" }}
+  secret: file-summariser-keytabs/client
+  account:
+    # Auth.Class.CentralService
+    class: e463b4ae-a322-46cc-8976-4ba76838e908
+    name: File Summariser
+    groups:
+      # Files.Requirement.SummariserServiceAccount, defined by core's
+      # acs-service-setup/dumps/addon-file-summariser.yaml
+      - 228366d4-d95c-4d87-86ef-7edba5e065b4

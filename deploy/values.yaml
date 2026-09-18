@@ -1,0 +1,65 @@
+# -- Image pull secrets for the container image
+imagePullSecrets: []
+
+image:
+  # -- The registry the image is pulled from
+  registry: ghcr.io/amrc-factoryplus
+  # -- The repository of the File Summariser image
+  repository: addon-file-summariser
+  # -- Overrides the image tag. Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+factoryPlus:
+  # -- URL of the central deployment's Directory service. This is the only
+  # hardcoded coordinate this add-on needs to reach Factory+: Auth, ConfigDB
+  # and Files are all found afterwards via Directory-based service discovery.
+  directoryUrl: ""
+  # -- The Kerberos realm of the central deployment.
+  realm: ""
+  # -- The base URL the central deployment is served from. Used to build
+  # this add-on's own krb5.conf.
+  baseUrl: ""
+  # -- The namespace the central deployment's Identity component (KDC/kadmin)
+  # runs in. Required so this add-on's krb5.conf can reach the central KDC
+  # across namespaces.
+  coreNamespace: ""
+
+influx:
+  # -- URL of the central deployment's InfluxDB server. InfluxDB access is
+  # not currently mediated by Factory+ service discovery, so this must be
+  # supplied directly.
+  url: ""
+  org: default
+  bucket: default
+  tokenSecret:
+    # -- Name of a Secret, in this release's namespace, holding the InfluxDB
+    # token. This add-on does not create it: copy it from the central
+    # deployment's `influxdb-auth` secret before installing, e.g.
+    #   kubectl -n <core-namespace> get secret influxdb-auth -o json |
+    #     jq 'del(.metadata) | .metadata.name="influxdb-auth"' |
+    #     kubectl -n <this-namespace> apply -f -
+    name: influxdb-auth
+    key: admin-token
+
+# -- Number of files to summarise concurrently. Each file is downloaded
+# to local scratch storage and parsed by a worker process, so this
+# directly bounds worst-case memory/CPU/disk use - keep it low.
+maxConcurrentJobs: 1
+# -- The number of summary points to batch together before sending to InfluxDB
+batchSize: 5000
+# -- Send all buffered points after this amount of time has elapsed if the batch is not full (in milliseconds)
+flushInterval: 10000
+# -- Size limit of the scratch volume used to hold a file while it is being summarised
+scratchSize: 20Gi
+# -- Node.js heap size limit in MB. Should be comfortably below resources.limits.memory
+nodeMaxOldSpaceSizeMb: 512
+# -- Possible values are either 1 to enable all possible debugging, or a comma-separated list of debug tags (the tags printed before the log lines). No logging is specified as an empty string.
+verbosity: "ALL,!service,!token"
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 6Gi

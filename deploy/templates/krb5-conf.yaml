@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: krb5-conf
+  namespace: {{ .Release.Namespace }}
+data:
+  krb5.conf: >
+    [libdefaults]
+        default_realm = {{ .Values.factoryPlus.realm | required "values.factoryPlus.realm is required!" }}
+        dns_canonicalize_hostname = false
+        rdns = false
+        udp_preference_limit = 1
+        spake_preauth_groups = edwards25519
+
+    [domain_realm]
+        cluster.local = {{ .Values.factoryPlus.realm | required "values.factoryPlus.realm is required!" }}
+            {{ .Values.factoryPlus.baseUrl | required "values.factoryPlus.baseUrl is required!" }} = {{ .Values.factoryPlus.realm }}
+
+    [realms]
+            {{ .Values.factoryPlus.realm }} = {
+            kdc = kdc.{{ .Values.factoryPlus.coreNamespace | required "values.factoryPlus.coreNamespace is required!" }}.svc.cluster.local
+            admin_server = kadmin.{{ .Values.factoryPlus.coreNamespace }}.svc.cluster.local
+            disable_encrypted_timestamp = true
+        }

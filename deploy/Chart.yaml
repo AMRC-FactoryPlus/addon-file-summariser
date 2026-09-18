@@ -1,0 +1,19 @@
+apiVersion: v2
+version: 1.0.0
+appVersion: "1.0.0"
+name: addon-file-summariser
+icon: https://www.sheffield.ac.uk/themes/custom/uos/favicon.svg
+description: >
+  Optional Factory+ add-on which watches ConfigDB for registered files
+  (e.g. TDMS waveform captures) and writes downsampled summaries into
+  InfluxDB. Installed as a standalone release into its own namespace,
+  alongside an existing central AMRC Connectivity Stack deployment.
+home: factoryplus.app.amrc.co.uk
+type: application
+keywords:
+  - factoryplus
+  - sheffield
+  - iiot
+maintainers:
+  - name: Alex Godbehere
+    email: alex.godbehere@amrc.co.uk
