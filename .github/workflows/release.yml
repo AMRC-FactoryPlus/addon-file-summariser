@@ -1,10 +1,5 @@
 # Build and publish addon-file-summariser.
-#
-# Self-contained: unlike a service still living in the amrc-connectivity-stack
-# monorepo, this does not call out to any shared composite action or
-# reusable workflow - everything this needs is in this file so it keeps
-# working unchanged once this directory becomes the root of its own repo.
-#
+
 # Triggered by publishing a GitHub release tagged vX.Y.Z. Builds and
 # pushes the container image to ghcr.io, then packages and pushes this
 # chart to the same registry's OCI chart store.
