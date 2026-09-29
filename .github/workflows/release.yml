@@ -29,7 +29,9 @@ jobs:
 
       - name: Determine version
         id: version
-        run: echo "version=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.3.0
