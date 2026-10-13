@@ -215,13 +215,48 @@ bootstrap created (harmless to leave in place if you reinstall later - see
 
 Because it re-derives "what needs doing" from ConfigDB on every startup, restarting the service is always safe - it just re-checks every registered file's state rather than tracking progress in memory or on local disk.
 
+## What the TDMS summariser writes
+
+InfluxDB is only used for **numeric time-series data**. The TDMS plugin (`lib/summarisers/tdms.js` + `lib/summarisers/tdms_summarise.py`) writes sampled signals and leaves everything else in the original file, which stays available from ACS-Files.
+
+### Downsampling
+
+`n` (from `Files.App.Summary`, default `1000`) is a **step**, not a target point count: for each channel, the samples at index `0, n, 2n, 3n, …` are kept and everything in between is dropped. No averaging or min/max is applied - each written point is a real sample from the file. For example, a 51.2 kHz channel with `n: 1000` gives one point roughly every 19.5 ms.
+
+### Point format
+
+Every point has the same shape:
+
+| Part | Value |
+|---|---|
+| Measurement | `tdms_summary` |
+| Tag `group` | TDMS group name (e.g. `Log`) |
+| Tag `channel` | TDMS channel name (e.g. `Acc1_X`) |
+| Tag `file` | ACS-Files UUID of the source file |
+| Tag `topLevelInstance` | The file's `device_uuid`, if one is set in its ACS-Files config (otherwise omitted) |
+| Field `value` | The sample, always a float |
+| Timestamp | `wf_start_time` + `wf_start_offset` + index × `wf_increment`, in nanoseconds |
+
+There is only ever one field, `value`, and it is always a float - so the field type never conflicts between channels.
+
+### What is written and what is skipped
+
+| TDMS data | Written? | Notes |
+|---|---|---|
+| Channels with waveform timing (`wf_start_time` and `wf_increment` properties) holding floating-point or integer data | Yes | Integers are converted to float. |
+| Waveform channels holding booleans (e.g. digital lines) | Yes | Written as `1.0` / `0.0`. |
+| Channels **without** waveform timing | No - whole channel skipped | These aren't sampled signals and have no time base. Typically event logs (e.g. FlexLogger's `Test Information/Events` + `Events_time`), lookup/calibration tables, or result values. |
+| Channels holding text, timestamps or complex numbers | No - whole channel skipped | Not numeric time-series data. |
+| Individual `NaN` / `±Infinity` samples | No - that sample skipped | InfluxDB can't store them. The rest of the channel is still written. |
+| File, group and channel properties (operator, run number, product name, units, etc.) | No | Only used internally for timing; never written to InfluxDB. |
+
 ## Memory and CPU safety
 
 This service is intentionally conservative, since it runs centrally rather than one instance per edge site, and the files it handles can be tens of gigabytes:
 
 - Only one file is processed at a time by default (`MAX_CONCURRENT_JOBS=1`). Raise this only after confirming the resource limits below can absorb it.
 - Files are streamed to a scratch volume on disk, never read into Node's memory as a whole.
-- The TDMS plugin parses the file in bounded windows (1,000,000 samples at a time per channel, see `lib/summarisers/tdms_summarise.py`) rather than loading a whole channel into memory, and streams its output to Node as NDJSON line-by-line rather than building the full summary in memory before returning it.
+- The TDMS plugin reads the file one on-disk data chunk at a time (via nptdms' `data_chunks()`, see `lib/summarisers/tdms_summarise.py`) rather than loading a whole channel into memory, decoding each chunk once and sharing it across every channel in it, and streams its output to Node as NDJSON line-by-line rather than building the full summary in memory before returning it.
 - The container has `resources.requests`/`limits` and `NODE_OPTIONS=--max-old-space-size` set in the Helm chart - see `deploy/values.yaml`.
 
 See [Known limitations](#known-limitations) for the one case where the memory bound above doesn't hold.
@@ -293,34 +328,10 @@ Any new plugin should follow the same convention.
 
 ## Known limitations
 
-- **nptdms only exposes microsecond precision for a channel's absolute start time** (`wf_start_time`), even though the TDMS format and `wf_increment` support finer resolution. Per-sample spacing is still nanosecond-accurate (computed from `wf_increment` directly), only the absolute start reference is limited to microseconds - this is a limitation of the `nptdms` library, not of this service.
+- **nptdms only exposes microsecond precision for a channel's absolute start time** (`wf_start_time`), even though the TDMS format and `wf_increment` support finer resolution. Only the absolute start reference is limited to microseconds - this is a limitation of the `nptdms` library, not of this service.
+- **`wf_increment` is rounded to a whole nanosecond**, and timestamps are computed as start + index × that rounded increment, so for sample rates whose period isn't a whole number of nanoseconds the error grows along the channel. E.g. at 51.2 kHz the true period is 19531.25 ns, written as 19531 ns, so timestamps drift 0.25 ns per sample - about 0.36 ms by the end of a 1.4 M-sample channel. Rates like 10 kHz or 50 kHz are exact.
+- **Numeric data timed by a separate channel is skipped.** Some TDMS files store irregularly-sampled data as a value channel plus a separate timestamp channel (e.g. `Pressure` + `Time`) instead of using waveform timing. Neither channel has `wf_start_time`/`wf_increment`, so both are skipped - see [What is written and what is skipped](#what-is-written-and-what-is-skipped).
 - **The bounded-memory read only holds if the source TDMS file is written in multiple reasonably-sized segments**, which is how real acquisition hardware streams data to disk. A pathological TDMS file written as a single giant segment can cause `nptdms` to do more work decoding a chunk internally; this was tested and doesn't reintroduce the original full-file-in-memory problem for realistic files, but it's worth knowing about if a summarisation job for a specific file is unexpectedly slow or memory-hungry.
 - There's no schema validation on `Files.App.Summary` config values (e.g. a non-numeric `n`).
 
-## Moving to its own repository
 
-This directory currently still lives inside the `amrc-connectivity-stack`
-monorepo, but nothing about it depends on that - moving it out is a plain
-copy, not a rewrite:
-
-1. Copy this directory to the root of a new repository (e.g.
-   `git subtree split` if you want to preserve history, or a plain copy if
-   you don't).
-2. Push a `vX.Y.Z` tag and publish a GitHub release. `.github/workflows/release.yml`
-   picks it up with no changes - see [Building](#building).
-
-Nothing needs to change in `package.json`, the `Dockerfile`, the
-`Makefile`, or `deploy/`: they were written to be self-contained precisely
-so this move needs no rewiring (see
-[Vendored dependencies](#vendored-dependencies) for why `vendor/` exists
-instead of ordinary npm dependencies).
-
-**The one thing that does NOT move**: `acs-service-setup/dumps/addon-file-summariser.yaml`
-and the `acs-service-setup/lib/uuids.js` entries it references stay in the
-`amrc-connectivity-stack` repo permanently, regardless of where this
-directory ends up, because only core's `service-setup` job has the
-admin-level Auth/ConfigDB access needed to apply them - see
-[Bootstrap coupling](#bootstrap-coupling). This is the one integration
-point that always requires a core-repo change alongside any change to
-this add-on's ConfigDB/Auth objects (new file types, new permissions,
-etc.) - everything else here is fully independent.
