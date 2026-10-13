@@ -17,6 +17,7 @@
 
 import sys
 import json
+import math
 
 import numpy as np
 from nptdms import TdmsFile
@@ -40,14 +41,9 @@ def channel_timing(channel):
     return start_ns, increment_ns
 
 
-def jsonable(value):
-    if isinstance(value, np.floating):
-        return float(value)
-    if isinstance(value, np.integer):
-        return int(value)
-    if isinstance(value, (bool, np.bool_)):
-        return bool(value)
-    return value
+# numpy dtype kinds that are numeric signals: bool, signed/unsigned int,
+# float. Anything else (strings, timestamps, complex) isn't written.
+NUMERIC_KINDS = "biuf"
 
 
 def summarise(file_path, step):
@@ -66,6 +62,14 @@ def summarise(file_path, step):
         for data_chunk in tdms_file.data_chunks():
             for group_chunk in data_chunk.groups():
                 for channel_chunk in group_chunk.channels():
+                    # Channels without waveform timing (e.g. FlexLogger's
+                    # Events/Events_time log) aren't sampled signals and
+                    # have no time base, so they're left out of the summary.
+                    timing = timings[(group_chunk.name, channel_chunk.name)]
+                    if timing is None:
+                        continue
+                    start_ns, increment_ns = timing
+
                     length = len(channel_chunk)
                     if length == 0:
                         continue
@@ -78,21 +82,26 @@ def summarise(file_path, step):
                     if local_start >= length:
                         continue
 
-                    timing = timings[(group_chunk.name, channel_chunk.name)]
-                    values = channel_chunk[:]
+                    # String channels come back as plain lists, not arrays.
+                    values = np.asarray(channel_chunk[:])
+                    if values.dtype.kind not in NUMERIC_KINDS:
+                        continue
 
                     for local_idx in range(local_start, length, step):
                         abs_idx = offset + local_idx
-                        if timing is not None:
-                            start_ns, increment_ns = timing
-                            timestamp_ns = start_ns + abs_idx * increment_ns
-                        else:
-                            timestamp_ns = abs_idx
+                        timestamp_ns = start_ns + abs_idx * increment_ns
+
+                        # Bools become 1.0/0.0. NaN/inf are dropped: Influx
+                        # can't store them, and json.dumps would emit bare
+                        # NaN/Infinity tokens that JSON.parse rejects.
+                        value = float(values[local_idx])
+                        if not math.isfinite(value):
+                            continue
 
                         row = {
                             "group": group_chunk.name,
                             "channel": channel_chunk.name,
-                            "value": jsonable(values[local_idx]),
+                            "value": value,
                             # Emitted as a string: nanosecond epoch timestamps
                             # exceed what a JSON/JS float can represent exactly.
                             "timestamp_ns": str(timestamp_ns),
