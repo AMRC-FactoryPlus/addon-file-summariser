@@ -225,19 +225,22 @@ InfluxDB is only used for **numeric time-series data**. The TDMS plugin (`lib/su
 
 ### Point format
 
-Every point has the same shape:
+Points use the same schema as the Sparkplug historian, so each TDMS channel can be queried through `acs-data-access` like a normal Sparkplug metric named `<group>/<channel>` (e.g. `Log/Acc1_X`):
 
 | Part | Value |
 |---|---|
-| Measurement | `tdms_summary` |
-| Tag `group` | TDMS group name (e.g. `Log`) |
-| Tag `channel` | TDMS channel name (e.g. `Acc1_X`) |
+| Measurement | `<channel>:d` - TDMS channel name plus the historian's float type suffix (e.g. `Acc1_X:d`) |
+| Tag `path` | TDMS group name (e.g. `Log`); omitted if the group name is empty |
 | Tag `file` | ACS-Files UUID of the source file |
 | Tag `topLevelInstance` | The file's `device_uuid`, if one is set in its ACS-Files config (otherwise omitted) |
 | Field `value` | The sample, always a float |
 | Timestamp | `wf_start_time` + `wf_start_offset` + index × `wf_increment`, in nanoseconds |
 
 There is only ever one field, `value`, and it is always a float - so the field type never conflicts between channels.
+
+TDMS group and channel names are free-form. A channel name containing `/`, or one ending in `:i`, `:u`, `:d`, `:b` or `:s`, will collide with the Sparkplug path/type-suffix convention and be mis-parsed by `acs-data-access` queries.
+
+The `unit` and `device` tags the historian writes are not written: channel units aren't extracted from the file, and only the device UUID (not its Sparkplug name) is known.
 
 ### What is written and what is skipped
 
