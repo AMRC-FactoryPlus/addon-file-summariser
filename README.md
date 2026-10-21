@@ -180,7 +180,7 @@ section is the reference version of the same steps.
 | `factoryPlus.baseUrl` | Base URL the central deployment is served from (used in krb5.conf). | yes |
 | `factoryPlus.coreNamespace` | Namespace core's Identity component (KDC/kadmin) runs in. | yes |
 | `api.port` | Port the polling HTTP API listens on. | no - default `8080` |
-| `api.authSecret.name` / `.usernameKey` / `.passwordKey` | Secret/keys holding the polling API's Basic-auth credentials (must already exist in this namespace - see step 2 above). | no - defaults to `file-summariser-api-auth`/`username`/`password` |
+| `api.authSecret.name` | Name of the Secret holding the polling API's Basic-auth credentials, under keys `username`/`password` (must already exist in this namespace - see step 2 above). | no - default `file-summariser-api-auth` |
 | `retentionHours` | How long a staged point is kept before being pruned if it's never successfully polled. | no - default `24` |
 | `pendingSize` | Size of the PVC holding points staged for delivery. | no - default `2Gi` |
 | `pendingStorageClass` | Storage class for that PVC. | no - default: cluster default |

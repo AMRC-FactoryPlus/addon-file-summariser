@@ -31,8 +31,9 @@ api:
   port: 8080
   authSecret:
     # -- Name of a Secret, in this release's namespace, holding the HTTP
-    # Basic-auth credentials the polling API requires. This add-on does not
-    # create it - create it yourself, e.g.:
+    # Basic-auth credentials the polling API requires, under the keys
+    # `username` and `password`. This add-on does not create it - create
+    # it yourself, e.g.:
     #   kubectl -n <namespace> create secret generic file-summariser-api-auth \
     #     --from-literal=username=edge-agent \
     #     --from-literal=password="$(openssl rand -base64 24)"
@@ -41,8 +42,6 @@ api:
     # posture as the InfluxDB token used to require (see the ingestion plan
     # doc in the amrc-connectivity-stack repo for why).
     name: file-summariser-api-auth
-    usernameKey: username
-    passwordKey: password
 
 # -- How long a summarised point is kept, staged for delivery, before being
 # pruned - in hours. Points are re-served on every poll until either they're

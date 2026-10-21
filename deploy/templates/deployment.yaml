@@ -64,12 +64,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.api.authSecret.name }}
-                  key: {{ .Values.api.authSecret.usernameKey }}
+                  key: username
             - name: API_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.api.authSecret.name }}
-                  key: {{ .Values.api.authSecret.passwordKey }}
+                  key: password
             - name: SCRATCH_DIR
               value: /scratch
             - name: MAX_CONCURRENT_JOBS
