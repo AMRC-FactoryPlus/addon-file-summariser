@@ -68,15 +68,20 @@ automatically:
 kubectl create namespace addon-file-summariser
 ```
 
-## Step 3 - copy the InfluxDB token across
+## Step 3 - create the polling API's credentials
 
-InfluxDB access isn't Factory+-mediated, so this is a manual step:
+The HTTP API a dedicated acs-edge REST connection polls isn't
+Factory+-mediated, so this is a manual step - same posture as the InfluxDB
+token used to be:
 
 ```sh
-kubectl -n <core-namespace> get secret influxdb-auth -o json \
-  | jq 'del(.metadata) | .metadata.name="influxdb-auth"' \
-  | kubectl -n addon-file-summariser apply -f -
+kubectl -n addon-file-summariser create secret generic file-summariser-api-auth \
+  --from-literal=username=edge-agent \
+  --from-literal=password="$(openssl rand -base64 24)"
 ```
+
+Keep the password - you'll need it again when configuring the REST
+connection in the Manager.
 
 ## Step 4 - install the chart
 
@@ -96,8 +101,7 @@ helm install addon-file-summariser ./addon-file-summariser/deploy \
   --set factoryPlus.directoryUrl=http://directory.<core-namespace>.svc.cluster.local \
   --set factoryPlus.realm=<identity.realm from above> \
   --set factoryPlus.baseUrl=<acs.baseUrl from above> \
-  --set factoryPlus.coreNamespace=<core-namespace> \
-  --set influx.url=http://acs-influxdb2.<core-namespace>.svc.cluster.local
+  --set factoryPlus.coreNamespace=<core-namespace>
 ```
 
 ## Step 5 - verify
@@ -110,8 +114,20 @@ kubectl -n addon-file-summariser logs deploy/file-summariser
 
 A healthy pod logs `Starting File Summariser, revision ...` then sits
 idle. To confirm it actually works end-to-end, upload a TDMS file through
-ACS-Files and watch `Files.App.SummaryState` in ConfigDB (or the InfluxDB
-bucket) for the resulting summary.
+ACS-Files, watch `Files.App.SummaryState` in ConfigDB for it to turn
+`done`, then check the polling API directly:
+
+```sh
+kubectl -n addon-file-summariser port-forward svc/file-summariser-api 8080:8080 &
+curl -u edge-agent:<password from Step 3> \
+  http://localhost:8080/v1/devices/<device_uuid>/channels
+```
+
+Getting the data all the way into InfluxDB also needs the acs-edge side set
+up (a dedicated REST connection polling this API, with one device/metric
+per machine and channel) - see
+`docs/plans/2026-10-21-tdms-summary-edge-agent-ingestion.{md,html}` in the
+`amrc-connectivity-stack` repo.
 
 If the `KerberosKey` never gets a Secret, that's almost always Step 0's
 krb-keys-operator upgrade not having landed - check that first.
