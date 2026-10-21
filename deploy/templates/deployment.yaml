@@ -30,6 +30,9 @@ spec:
         - name: scratch
           emptyDir:
             sizeLimit: {{ .Values.scratchSize }}
+        - name: pending
+          persistentVolumeClaim:
+            claimName: file-summariser-pending
 
       containers:
         - name: file-summariser
@@ -37,6 +40,9 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "/usr/bin/k5start", "-Uf", "/keytabs/client" ]
           args: [ "node", "bin/summariser.js" ]
+          ports:
+            - name: api
+              containerPort: {{ .Values.api.port }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
@@ -48,21 +54,22 @@ spec:
               value: {{ .Values.verbosity | required "values.verbosity" }}
             - name: DIRECTORY_URL
               value: {{ .Values.factoryPlus.directoryUrl | required "values.factoryPlus.directoryUrl is required!" }}
-            - name: INFLUX_URL
-              value: {{ .Values.influx.url | required "values.influx.url is required!" }}
-            - name: INFLUX_ORG
-              value: {{ .Values.influx.org | quote }}
-            - name: INFLUX_BUCKET
-              value: {{ .Values.influx.bucket | quote }}
-            - name: INFLUX_TOKEN
+            - name: PENDING_DIR
+              value: /pending
+            - name: RETENTION_HOURS
+              value: {{ .Values.retentionHours | quote }}
+            - name: API_PORT
+              value: {{ .Values.api.port | quote }}
+            - name: API_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.influx.tokenSecret.name }}
-                  key: {{ .Values.influx.tokenSecret.key }}
-            - name: BATCH_SIZE
-              value: {{ .Values.batchSize | quote }}
-            - name: FLUSH_INTERVAL
-              value: {{ .Values.flushInterval | quote }}
+                  name: {{ .Values.api.authSecret.name }}
+                  key: {{ .Values.api.authSecret.usernameKey }}
+            - name: API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.api.authSecret.name }}
+                  key: {{ .Values.api.authSecret.passwordKey }}
             - name: SCRATCH_DIR
               value: /scratch
             - name: MAX_CONCURRENT_JOBS
@@ -76,3 +83,5 @@ spec:
               name: krb5-keytabs
             - mountPath: /scratch
               name: scratch
+            - mountPath: /pending
+              name: pending
