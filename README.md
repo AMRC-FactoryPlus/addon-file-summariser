@@ -99,7 +99,11 @@ section is the reference version of the same steps.
 ### Prerequisites
 
 - A working core Factory+ deployment, reachable from wherever you install
-  this chart (typically the same Kubernetes cluster).
+  this chart (typically the same Kubernetes cluster). This add-on only needs
+  HTTP reachability to Auth/ConfigDB/Files/Directory - it authenticates with
+  a username/password (verified server-side against Kerberos by whichever
+  service receives the request), so it never needs direct network access to
+  the KDC itself.
 - Core must already have applied
   `acs-service-setup/dumps/addon-file-summariser.yaml`. This happens
   automatically as part of core's normal `service-setup` bootstrap/upgrade
@@ -138,9 +142,7 @@ section is the reference version of the same steps.
    helm install addon-file-summariser ./deploy \
      --namespace addon-file-summariser \
      --set factoryPlus.directoryUrl=http://directory.<core-namespace>.svc.cluster.local \
-     --set factoryPlus.realm=FACTORYPLUS.MYORGANISATION.COM \
-     --set factoryPlus.baseUrl=factoryplus.myorganisation.com \
-     --set factoryPlus.coreNamespace=<core-namespace>
+     --set factoryPlus.realm=FACTORYPLUS.MYORGANISATION.COM
    ```
 
    Or, once a release has been published (see [Building](#building) above),
@@ -176,9 +178,7 @@ section is the reference version of the same steps.
 | Value | Meaning | Required |
 |---|---|---|
 | `factoryPlus.directoryUrl` | URL of the central Directory service. The only hardcoded Factory+ coordinate - everything else is discovered from here. | yes |
-| `factoryPlus.realm` | Kerberos realm of the central deployment. | yes |
-| `factoryPlus.baseUrl` | Base URL the central deployment is served from (used in krb5.conf). | yes |
-| `factoryPlus.coreNamespace` | Namespace core's Identity component (KDC/kadmin) runs in. | yes |
+| `factoryPlus.realm` | Kerberos realm of the central deployment. Used to build this service's principal name (`sv1filesummariser@<realm>`). | yes |
 | `api.port` | Port the polling HTTP API listens on. | no - default `8080` |
 | `api.authSecret.name` | Name of the Secret holding the polling API's Basic-auth credentials, under keys `username`/`password` (must already exist in this namespace - see step 2 above). | no - default `file-summariser-api-auth` |
 | `retentionHours` | How long a staged point is kept before being pruned if it's never successfully polled. | no - default `24` |
@@ -203,11 +203,18 @@ helm uninstall addon-file-summariser --namespace addon-file-summariser
 kubectl delete namespace addon-file-summariser
 ```
 
-Deleting the namespace also removes the `KerberosKey` and its keytab
+Deleting the namespace also removes the `KerberosKey` and its password
 Secret. Uninstalling only removes this add-on's own resources - it never
 touches core, and doesn't roll back the small ConfigDB/Auth objects core's
 bootstrap created (harmless to leave in place if you reinstall later - see
 [Bootstrap coupling](#bootstrap-coupling)).
+
+The credential itself is a password generated server-side by the
+krb-keys-operator and stored in plaintext in a k8s Secret
+(`file-summariser-password`) - the same exposure level as any other Secret
+in the cluster, including the keytab this used to be (also just as readable
+by anyone with Secret access), not a new class of risk, but worth stating
+since it's a readable password rather than an opaque keytab blob.
 
 ## How it works
 
@@ -297,7 +304,7 @@ The dispatcher, queue, state tracking and pending-points store are all file-type
 
 ## Configuration
 
-Standard Factory+ service client variables are read from the environment by `@amrc-factoryplus/service-client` (`DIRECTORY_URL`, `REALM`, `CLIENT_KEYTAB`, `VERBOSE`, etc.) - see the [service client documentation](vendor/service-client). In addition:
+Standard Factory+ service client variables are read from the environment by `@amrc-factoryplus/service-client` (`DIRECTORY_URL`, `SERVICE_USERNAME`, `SERVICE_PASSWORD`, `VERBOSE`, etc.) - see the [service client documentation](vendor/service-client). In addition:
 
 | Variable             | Meaning                                                                    | Default        |
 |----------------------|-----------------------------------------------------------------------------|----------------|

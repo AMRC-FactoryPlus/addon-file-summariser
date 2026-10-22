@@ -9,9 +9,9 @@ metadata:
   name: sv1filesummariser
   namespace: {{ .Release.Namespace }}
 spec:
-  type: Random
+  type: Password
   principal: sv1filesummariser@{{ .Values.factoryPlus.realm | required "values.factoryPlus.realm is required!" }}
-  secret: file-summariser-keytabs/client
+  secret: file-summariser-password/password
   account:
     # Auth.Class.CentralService
     class: e463b4ae-a322-46cc-8976-4ba76838e908

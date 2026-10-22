@@ -21,12 +21,6 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:
-        - name: krb5-conf
-          configMap:
-            name: krb5-conf
-        - name: krb5-keytabs
-          secret:
-            secretName: file-summariser-keytabs
         - name: scratch
           emptyDir:
             sizeLimit: {{ .Values.scratchSize }}
@@ -38,18 +32,19 @@ spec:
         - name: file-summariser
           image: {{ include "addon-file-summariser.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: [ "/usr/bin/k5start", "-Uf", "/keytabs/client" ]
-          args: [ "node", "bin/summariser.js" ]
           ports:
             - name: api
               containerPort: {{ .Values.api.port }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
-            - name: KRB5_CONFIG
-              value: /config/krb5-conf/krb5.conf
-            - name: CLIENT_KEYTAB
-              value: /keytabs/client
+            - name: SERVICE_USERNAME
+              value: sv1filesummariser@{{ .Values.factoryPlus.realm | required "values.factoryPlus.realm is required!" }}
+            - name: SERVICE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: file-summariser-password
+                  key: password
             - name: VERBOSE
               value: {{ .Values.verbosity | required "values.verbosity" }}
             - name: DIRECTORY_URL
@@ -77,10 +72,6 @@ spec:
             - name: NODE_OPTIONS
               value: "--max-old-space-size={{ .Values.nodeMaxOldSpaceSizeMb }}"
           volumeMounts:
-            - mountPath: /config/krb5-conf
-              name: krb5-conf
-            - mountPath: /keytabs
-              name: krb5-keytabs
             - mountPath: /scratch
               name: scratch
             - mountPath: /pending

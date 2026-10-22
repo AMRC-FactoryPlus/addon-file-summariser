@@ -17,13 +17,6 @@ factoryPlus:
   directoryUrl: ""
   # -- The Kerberos realm of the central deployment.
   realm: ""
-  # -- The base URL the central deployment is served from. Used to build
-  # this add-on's own krb5.conf.
-  baseUrl: ""
-  # -- The namespace the central deployment's Identity component (KDC/kadmin)
-  # runs in. Required so this add-on's krb5.conf can reach the central KDC
-  # across namespaces.
-  coreNamespace: ""
 
 api:
   # -- Port the HTTP API (polled by a dedicated acs-edge REST connection, and

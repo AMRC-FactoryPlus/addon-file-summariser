@@ -85,10 +85,10 @@ connection in the Manager.
 
 ## Step 4 - install the chart
 
-You need four values from your existing core deployment - get them with:
+You need the realm from your existing core deployment - get it with:
 
 ```sh
-helm get values <core-release-name> -n <core-namespace> | grep -E 'realm|baseUrl'
+helm get values <core-release-name> -n <core-namespace> | grep realm
 ```
 
 Then:
@@ -99,9 +99,7 @@ helm install addon-file-summariser ./addon-file-summariser/deploy \
   --set image.registry=<your-registry> \
   --set image.tag=dev \
   --set factoryPlus.directoryUrl=http://directory.<core-namespace>.svc.cluster.local \
-  --set factoryPlus.realm=<identity.realm from above> \
-  --set factoryPlus.baseUrl=<acs.baseUrl from above> \
-  --set factoryPlus.coreNamespace=<core-namespace>
+  --set factoryPlus.realm=<identity.realm from above>
 ```
 
 ## Step 5 - verify
@@ -129,5 +127,6 @@ per machine and channel) - see
 `docs/plans/2026-10-21-tdms-summary-edge-agent-ingestion.{md,html}` in the
 `amrc-connectivity-stack` repo.
 
-If the `KerberosKey` never gets a Secret, that's almost always Step 0's
-krb-keys-operator upgrade not having landed - check that first.
+If the `KerberosKey` never gets a Secret (`Type` should read `Password`), that's
+almost always Step 0's krb-keys-operator upgrade not having landed - check
+that first.
