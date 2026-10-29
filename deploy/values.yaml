@@ -15,8 +15,17 @@ factoryPlus:
   # hardcoded coordinate this add-on needs to reach Factory+: Auth, ConfigDB
   # and Files are all found afterwards via Directory-based service discovery.
   directoryUrl: ""
-  # -- The Kerberos realm of the central deployment.
-  realm: ""
+  credentialsSecret:
+    # -- Name of a Secret, in this release's namespace, holding this service
+    # account's Factory+ credentials under the keys `username` and
+    # `password`. This add-on does not create it, and there is no
+    # krb-keys-operator involvement - you create both the Factory+ service
+    # account and this Secret yourself (see README.md's "Service account"
+    # section), e.g.:
+    #   kubectl -n <namespace> create secret generic file-summariser-service-auth \
+    #     --from-literal=username=<account's username/principal> \
+    #     --from-literal=password=<account's password>
+    name: file-summariser-service-auth
 
 api:
   # -- Port the HTTP API (polled by a dedicated acs-edge REST connection, and

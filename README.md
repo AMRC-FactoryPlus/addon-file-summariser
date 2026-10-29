@@ -110,15 +110,54 @@ section is the reference version of the same steps.
   job, regardless of whether this add-on is actually installed - see
   [Bootstrap coupling](#bootstrap-coupling). Nothing extra to do here as
   long as core is reasonably up to date.
+- A Factory+ service account for this add-on, created manually by whoever
+  administers the core deployment - there is no krb-keys-operator/`KerberosKey`
+  involvement, this add-on's own chart only consumes a Secret with the
+  resulting credentials. See [Service account](#service-account) below for
+  what the account needs.
 - `helm` >= 3.8 (for `oci://` chart support, if installing a published
   chart rather than a local checkout) and `kubectl` access to the cluster.
 
+### Service account
+
+This add-on does not provision its own Factory+ service account - create
+one yourself (e.g. via `kadmin` for the Kerberos principal/password, and
+`acs-admin` or direct ConfigDB/Auth calls for the identity), with:
+
+- A Kerberos principal and password - any name you like, this add-on
+  doesn't care what it's called, only that `SERVICE_USERNAME`/
+  `SERVICE_PASSWORD` (see [Step by step](#step-by-step)) are valid Factory+
+  credentials for it.
+- A ConfigDB identity of class `e463b4ae-a322-46cc-8976-4ba76838e908`
+  (`Auth.Class.CentralService`).
+- Membership of group `228366d4-d95c-4d87-86ef-7edba5e065b4`
+  (`Files.Requirement.SummariserServiceAccount`).
+
+That last one is where the actual permissions come from - not from anything
+you grant by hand. `acs-service-setup/dumps/addon-file-summariser.yaml` (in
+the core repo) carries a `grants` block keyed by that same UUID, which the
+Auth service applies to every ConfigDB identity classified under it. Adding
+the account as a member is the only step needed; it then automatically has:
+
+| Permission | On | Why this service needs it |
+|---|---|---|
+| `ConfigDB.Perm.ReadMembers` | `Files.FileType.TDMS` | Watches this class's membership to find new files to summarise (`lib/dispatcher.js`'s `watch_members`). |
+| `ConfigDB.Perm.ReadConfig` | `Files.App.Config`, `Files.App.Summary`, `Files.App.SummaryState` | Reads a file's ACS-Files config, its summarisation settings, and its own processing state (`lib/job.js`, `lib/state.js`). |
+| `ConfigDB.Perm.WriteConfig` | `Files.App.SummaryState` | Records a file as `done`/`error` once (re-)processed (`lib/state.js`) - the only object type this service ever writes to. |
+| `Files.Perm.Download` | `Files.Class.File` (wildcard) | Downloads the file's content from ACS-Files to summarise it (`lib/job.js`'s `save_file`). |
+| `Auth.Perm.ReadACL` | `Files.Perm.All` (wildcard) | Used internally by the vendored service-client/Auth libraries, not called directly by this add-on's own code. |
+
+This is exactly what the `KerberosKey`'s `account:` block used to set up
+automatically for you on every install/upgrade (it only ever added the
+*classification*, the same single step above - the grants themselves have
+always come from the bootstrap dump, not the chart). That automation is
+gone, so classifying the account is now a one-time manual step per install,
+not something `helm upgrade` repeats for you.
+
 ### Step by step
 
-1. Create a namespace named `addon-<something>`. The krb-keys-operator's
-   default watch pattern only auto-picks-up `addon-*` namespaces - use a
-   different name and you'll need to add it to core's
-   `identity.krbKeysOperator.namespaces` value yourself:
+1. Create a namespace for this add-on (any name - there's no
+   krb-keys-operator namespace-watch requirement to satisfy):
 
    ```sh
    kubectl create namespace addon-file-summariser
@@ -136,13 +175,22 @@ section is the reference version of the same steps.
    Keep the password - you'll need it again when configuring the REST
    connection in the Manager.
 
-3. Install the chart. From a local checkout:
+3. Create the service account's credentials Secret, using the
+   username/password of the Factory+ service account you created per
+   [Service account](#service-account) above:
+
+   ```sh
+   kubectl -n addon-file-summariser create secret generic file-summariser-service-auth \
+     --from-literal=username=<the account's principal> \
+     --from-literal=password=<the account's password>
+   ```
+
+4. Install the chart. From a local checkout:
 
    ```sh
    helm install addon-file-summariser ./deploy \
      --namespace addon-file-summariser \
-     --set factoryPlus.directoryUrl=http://directory.<core-namespace>.svc.cluster.local \
-     --set factoryPlus.realm=FACTORYPLUS.MYORGANISATION.COM
+     --set factoryPlus.directoryUrl=http://directory.<core-namespace>.svc.cluster.local
    ```
 
    Or, once a release has been published (see [Building](#building) above),
@@ -161,11 +209,10 @@ section is the reference version of the same steps.
    fill in the `factoryPlus`/`api` sections, and pass it with
    `helm install ... -f my-values.yaml` instead of a wall of `--set` flags.
 
-4. Verify:
+5. Verify:
 
    ```sh
    kubectl -n addon-file-summariser get pods
-   kubectl -n addon-file-summariser get krb sv1filesummariser
    kubectl -n addon-file-summariser logs deploy/file-summariser
    ```
 
@@ -178,7 +225,7 @@ section is the reference version of the same steps.
 | Value | Meaning | Required |
 |---|---|---|
 | `factoryPlus.directoryUrl` | URL of the central Directory service. The only hardcoded Factory+ coordinate - everything else is discovered from here. | yes |
-| `factoryPlus.realm` | Kerberos realm of the central deployment. Used to build this service's principal name (`sv1filesummariser@<realm>`). | yes |
+| `factoryPlus.credentialsSecret.name` | Name of the Secret holding this service's Factory+ credentials, under keys `username`/`password` (must already exist in this namespace - see [Service account](#service-account) and step 3 above). No operator involvement - this is exactly whatever credentials you created the account with. | no - default `file-summariser-service-auth` |
 | `api.port` | Port the polling HTTP API listens on. | no - default `8080` |
 | `api.authSecret.name` | Name of the Secret holding the polling API's Basic-auth credentials, under keys `username`/`password` (must already exist in this namespace - see step 2 above). | no - default `file-summariser-api-auth` |
 | `retentionHours` | How long a staged point is kept before being pruned if it's never successfully polled. | no - default `24` |
@@ -203,18 +250,21 @@ helm uninstall addon-file-summariser --namespace addon-file-summariser
 kubectl delete namespace addon-file-summariser
 ```
 
-Deleting the namespace also removes the `KerberosKey` and its password
-Secret. Uninstalling only removes this add-on's own resources - it never
-touches core, and doesn't roll back the small ConfigDB/Auth objects core's
-bootstrap created (harmless to leave in place if you reinstall later - see
-[Bootstrap coupling](#bootstrap-coupling)).
+Deleting the namespace removes the `file-summariser-service-auth` Secret you
+created, but **not** the Factory+ service account itself - that lives
+centrally in ConfigDB/Auth, not in this Kubernetes namespace, so you need to
+remove it yourself (the reverse of [Service account](#service-account)) if
+it's no longer wanted. Uninstalling the chart only removes this add-on's own
+resources - it never touches core, and doesn't roll back the small
+ConfigDB/Auth objects core's bootstrap created (harmless to leave in place if
+you reinstall later - see [Bootstrap coupling](#bootstrap-coupling)).
 
-The credential itself is a password generated server-side by the
-krb-keys-operator and stored in plaintext in a k8s Secret
-(`file-summariser-password`) - the same exposure level as any other Secret
-in the cluster, including the keytab this used to be (also just as readable
-by anyone with Secret access), not a new class of risk, but worth stating
-since it's a readable password rather than an opaque keytab blob.
+The credential itself is a password you choose, stored in plaintext in a k8s
+Secret (`file-summariser-service-auth`) you create and manage yourself - the
+same exposure level as any other Secret in the cluster, including the keytab
+this used to be (also just as readable by anyone with Secret access), not a
+new class of risk, but worth stating since it's a readable password rather
+than an opaque keytab blob.
 
 ## How it works
 
@@ -336,9 +386,12 @@ and Auth's `/load` endpoints are deliberately admin-only - there is no
 service account scoped to this add-on can't self-register its own role and
 grants. Core's `acs-service-setup` still owns applying
 `acs-service-setup/dumps/addon-file-summariser.yaml`, as a small, isolated,
-purely-additive dump file. Everything else (the Deployment, the
-`KerberosKey`/identity, the namespace) is entirely this add-on's own
-concern.
+purely-additive dump file.
+
+This add-on's own service account's identity is a separate, further manual
+step - see [Service account](#service-account) - since there's no
+krb-keys-operator automating it per-install. Everything else (the
+Deployment, the namespace) is entirely this add-on's own concern.
 
 ## Retries
 

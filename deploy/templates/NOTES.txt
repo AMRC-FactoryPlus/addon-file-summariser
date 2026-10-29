@@ -2,12 +2,14 @@ addon-file-summariser has been installed into namespace {{ .Release.Namespace }}
 
 This is an optional Factory+ add-on, not part of core ACS. It expects:
 
-  - The core deployment's krb-keys-operator to be watching this namespace
-    (true by default for any `addon-*` namespace).
   - A `file-summariser-api-auth` secret (or whatever you set
     api.authSecret.name to) to already exist in this namespace, holding the
     Basic-auth credentials for the polling API - see values.yaml for how to
     create one.
+  - A `file-summariser-service-auth` secret (or whatever you set
+    factoryPlus.credentialsSecret.name to) to already exist in this
+    namespace, holding this service's Factory+ username/password - see
+    values.yaml for how to create one.
   - Core's acs-service-setup to have applied
     acs-service-setup/dumps/addon-file-summariser.yaml, registering this
     service's ConfigDB/Auth objects.
@@ -19,6 +21,6 @@ docs/plans/2026-10-21-tdms-summary-edge-agent-ingestion.{md,html} in the
 amrc-connectivity-stack repo for the full design and the Manager-side setup
 this still needs (one device/metric per machine and channel).
 
-Check `kubectl -n {{ .Release.Namespace }} get pods` and the KerberosKey
-status (`kubectl -n {{ .Release.Namespace }} get krb sv1filesummariser`) to
-confirm the identity was issued correctly.
+Check `kubectl -n {{ .Release.Namespace }} get pods` and
+`kubectl -n {{ .Release.Namespace }} logs deploy/file-summariser` to confirm
+it authenticated to Factory+ correctly.

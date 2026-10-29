@@ -39,11 +39,14 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
             - name: SERVICE_USERNAME
-              value: sv1filesummariser@{{ .Values.factoryPlus.realm | required "values.factoryPlus.realm is required!" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.factoryPlus.credentialsSecret.name }}
+                  key: username
             - name: SERVICE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: file-summariser-password
+                  name: {{ .Values.factoryPlus.credentialsSecret.name }}
                   key: password
             - name: VERBOSE
               value: {{ .Values.verbosity | required "values.verbosity" }}
