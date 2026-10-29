@@ -1,0 +1,19 @@
+# Holds summarised points staged for delivery to the polling acs-edge
+# instance, pruned by RETENTION_HOURS. Deliberately a real PVC, not an
+# emptyDir like `scratch` - losing this on a pod restart would silently
+# drop any not-yet-delivered data, which the rest of this service goes out
+# of its way to avoid (see README, "restarting the service is always safe").
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: file-summariser-pending
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.pendingStorageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.pendingSize }}

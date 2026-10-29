@@ -1,0 +1,16 @@
+# ClusterIP only - this API is meant to be reached by a dedicated acs-edge
+# REST connection running in the same cluster, not exposed outside it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: file-summariser-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    component: file-summariser
+spec:
+  selector:
+    component: file-summariser
+  ports:
+    - name: api
+      port: {{ .Values.api.port }}
+      targetPort: api

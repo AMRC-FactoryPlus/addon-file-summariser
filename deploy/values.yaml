@@ -15,41 +15,52 @@ factoryPlus:
   # hardcoded coordinate this add-on needs to reach Factory+: Auth, ConfigDB
   # and Files are all found afterwards via Directory-based service discovery.
   directoryUrl: ""
-  # -- The Kerberos realm of the central deployment.
-  realm: ""
-  # -- The base URL the central deployment is served from. Used to build
-  # this add-on's own krb5.conf.
-  baseUrl: ""
-  # -- The namespace the central deployment's Identity component (KDC/kadmin)
-  # runs in. Required so this add-on's krb5.conf can reach the central KDC
-  # across namespaces.
-  coreNamespace: ""
+  credentialsSecret:
+    # -- Name of a Secret, in this release's namespace, holding this service
+    # account's Factory+ credentials under the keys `username` and
+    # `password`. This add-on does not create it, and there is no
+    # krb-keys-operator involvement - you create both the Factory+ service
+    # account and this Secret yourself (see README.md's "Service account"
+    # section), e.g.:
+    #   kubectl -n <namespace> create secret generic file-summariser-service-auth \
+    #     --from-literal=username=<account's username/principal> \
+    #     --from-literal=password=<account's password>
+    name: file-summariser-service-auth
 
-influx:
-  # -- URL of the central deployment's InfluxDB server. InfluxDB access is
-  # not currently mediated by Factory+ service discovery, so this must be
-  # supplied directly.
-  url: ""
-  org: default
-  bucket: default
-  tokenSecret:
-    # -- Name of a Secret, in this release's namespace, holding the InfluxDB
-    # token. This add-on does not create it: copy it from the central
-    # deployment's `influxdb-auth` secret before installing, e.g.
-    #   kubectl -n <core-namespace> get secret influxdb-auth -o json |
-    #     jq 'del(.metadata) | .metadata.name="influxdb-auth"' |
-    #     kubectl -n <this-namespace> apply -f -
-    name: influxdb-auth
-    key: admin-token
+api:
+  # -- Port the HTTP API (polled by a dedicated acs-edge REST connection, and
+  # used by admins for channel discovery) listens on inside the pod.
+  port: 8080
+  authSecret:
+    # -- Name of a Secret, in this release's namespace, holding the HTTP
+    # Basic-auth credentials the polling API requires, under the keys
+    # `username` and `password`. This add-on does not create it - create
+    # it yourself, e.g.:
+    #   kubectl -n <namespace> create secret generic file-summariser-api-auth \
+    #     --from-literal=username=edge-agent \
+    #     --from-literal=password="$(openssl rand -base64 24)"
+    # Use the same username/password when configuring the REST connection
+    # in the Manager. Not Factory+/Kerberos-mediated - same unmediated-access
+    # posture as the InfluxDB token used to require (see the ingestion plan
+    # doc in the amrc-connectivity-stack repo for why).
+    name: file-summariser-api-auth
+
+# -- How long a summarised point is kept, staged for delivery, before being
+# pruned - in hours. Points are re-served on every poll until either they're
+# picked up or this window elapses, so this is a grace period for the
+# polling edge agent/MQTT being temporarily unavailable, not a guarantee.
+retentionHours: 24
+# -- Size of the PVC holding points staged for delivery. Downsampled data is
+# small by design - see the ingestion plan doc for a sizing estimate.
+pendingSize: 2Gi
+# -- Storage class for the pending-points PVC. Leave empty to use the
+# cluster default.
+pendingStorageClass: ""
 
 # -- Number of files to summarise concurrently. Each file is downloaded
 # to local scratch storage and parsed by a worker process, so this
 # directly bounds worst-case memory/CPU/disk use - keep it low.
 maxConcurrentJobs: 1
-# -- The number of summary points to batch together before sending to InfluxDB
-batchSize: 5000
-# -- Send all buffered points after this amount of time has elapsed if the batch is not full (in milliseconds)
-flushInterval: 10000
 # -- Size limit of the scratch volume used to hold a file while it is being summarised
 scratchSize: 20Gi
 # -- Node.js heap size limit in MB. Should be comfortably below resources.limits.memory
