@@ -16,6 +16,12 @@ spec:
         component: file-summariser
         factory-plus.service: file-summariser
     spec:
+      # The image runs as `node` (uid/gid 1000) but a fresh PVC is
+      # root-owned; fsGroup makes the kubelet give that group write
+      # access to /pending.
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
