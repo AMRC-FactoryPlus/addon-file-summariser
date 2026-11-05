@@ -139,13 +139,13 @@ the core repo) carries a `grants` block keyed by that same UUID, which the
 Auth service applies to every ConfigDB identity classified under it. Adding
 the account as a member is the only step needed; it then automatically has:
 
-| Permission | On | Why this service needs it |
-|---|---|---|
-| `ConfigDB.Perm.ReadMembers` | `Files.FileType.TDMS` | Watches this class's membership to find new files to summarise (`lib/dispatcher.js`'s `watch_members`). |
-| `ConfigDB.Perm.ReadConfig` | `Files.App.Config`, `Files.App.Summary`, `Files.App.SummaryState` | Reads a file's ACS-Files config, its summarisation settings, and its own processing state (`lib/job.js`, `lib/state.js`). |
-| `ConfigDB.Perm.WriteConfig` | `Files.App.SummaryState` | Records a file as `done`/`error` once (re-)processed (`lib/state.js`) - the only object type this service ever writes to. |
-| `Files.Perm.Download` | `Files.Class.File` (wildcard) | Downloads the file's content from ACS-Files to summarise it (`lib/job.js`'s `save_file`). |
-| `Auth.Perm.ReadACL` | `Files.Perm.All` (wildcard) | Used internally by the vendored service-client/Auth libraries, not called directly by this add-on's own code. |
+| Permission | On | Plural | Why this service needs it |
+|---|---|---|---|
+| `ConfigDB.Perm.ReadMembers` | `Files.FileType.TDMS` | FALSE | Watches this class's membership to find new files to summarise (`lib/dispatcher.js`'s `watch_members`). |
+| `ConfigDB.Perm.ReadConfig` | `Files.App.Config`, `Files.App.Summary`, `Files.App.SummaryState` | FALSE | Reads a file's ACS-Files config, its summarisation settings, and its own processing state (`lib/job.js`, `lib/state.js`). |
+| `ConfigDB.Perm.WriteConfig` | `Files.App.SummaryState` | FALSE | Records a file as `done`/`error` once (re-)processed (`lib/state.js`) - the only object type this service ever writes to. |
+| `Files.Perm.Download` | `Files.Class.File` (wildcard) | TRUE | Downloads the file's content from ACS-Files to summarise it (`lib/job.js`'s `save_file`). |
+| `Auth.Perm.ReadACL` | `Files.Perm.All` (wildcard) | TRUE | Used internally by the vendored service-client/Auth libraries, not called directly by this add-on's own code. |
 
 This is exactly what the `KerberosKey`'s `account:` block used to set up
 automatically for you on every install/upgrade (it only ever added the
