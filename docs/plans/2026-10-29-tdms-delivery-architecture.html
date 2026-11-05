@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>File Summariser delivery: from direct InfluxDB writes to a polling HTTP API</title>
+<style>
+  :root{
+    --bg:#faf9f7;
+    --bg-raised:#ffffff;
+    --ink:#1f2328;
+    --ink-dim:#5b6168;
+    --border:#e3e0da;
+    --accent:#2457c5;
+    --accent-bg:#eaf0fd;
+    --accent-ink:#1a3f99;
+    --good:#1a7f4e;
+    --good-bg:#e7f6ee;
+    --bad:#b3261e;
+    --bad-bg:#fbeae9;
+    --warn:#9a6700;
+    --warn-bg:#fdf3dc;
+    --mono-bg:#f0eee9;
+    --line:#c7c3bb;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1b1c1e;
+      --bg-raised:#232427;
+      --ink:#e7e7e5;
+      --ink-dim:#a3a7ad;
+      --border:#36383c;
+      --accent:#7ba2f5;
+      --accent-bg:#1c2a46;
+      --accent-ink:#bcd0fb;
+      --good:#6fcf9a;
+      --good-bg:#17301f;
+      --bad:#f2918c;
+      --bad-bg:#3a1f1d;
+      --warn:#e6b85c;
+      --warn-bg:#3a2f14;
+      --mono-bg:#2a2b2e;
+      --line:#4a4d52;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1b1c1e;
+    --bg-raised:#232427;
+    --ink:#e7e7e5;
+    --ink-dim:#a3a7ad;
+    --border:#36383c;
+    --accent:#7ba2f5;
+    --accent-bg:#1c2a46;
+    --accent-ink:#bcd0fb;
+    --good:#6fcf9a;
+    --good-bg:#17301f;
+    --bad:#f2918c;
+    --bad-bg:#3a1f1d;
+    --warn:#e6b85c;
+    --warn-bg:#3a2f14;
+    --mono-bg:#2a2b2e;
+    --line:#4a4d52;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size:15px;
+    line-height:1.65;
+  }
+  img{max-width:100%;}
+  [hidden]{display:none!important;}
+  .wrap{
+    max-width: 880px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 40px 80px;
+  }
+  header.doc-head{ margin-bottom: 36px; }
+  .eyebrow{
+    font-size:12.5px;
+    font-weight:700;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--accent-ink);
+    background:var(--accent-bg);
+    display:inline-block;
+    padding:3px 10px;
+    border-radius:999px;
+    margin-bottom:14px;
+  }
+  h1{ font-size: 27px; line-height:1.25; margin: 0 0 10px; letter-spacing:-0.01em; }
+  .meta{ color:var(--ink-dim); font-size:13.5px; display:flex; flex-wrap:wrap; gap:4px 16px; }
+  .meta code{ font-size:12.5px; background:var(--mono-bg); padding:1px 6px; border-radius:5px; }
+  h2{
+    font-size:19px;
+    margin: 44px 0 14px;
+    padding-top:18px;
+    border-top:1px solid var(--border);
+  }
+  h2:first-of-type{ border-top:none; padding-top:0; }
+  h3{ font-size:15.5px; margin: 22px 0 8px; }
+  p{ margin: 0 0 12px; }
+  .lede{ font-size:16px; color:var(--ink-dim); }
+  code, .mono{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    background:var(--mono-bg);
+    padding: 1px 6px;
+    border-radius:5px;
+  }
+  pre{
+    background:var(--mono-bg);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:14px 16px;
+    overflow-x:auto;
+    font-size:13px;
+    line-height:1.55;
+  }
+  pre code{ background:none; padding:0; }
+  a{ color:var(--accent); }
+
+  .callout{
+    background:var(--accent-bg);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:14px 18px;
+    margin: 18px 0;
+  }
+  .callout .label{
+    font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--accent-ink); margin-bottom:6px; display:block;
+  }
+  .callout p:last-child{ margin-bottom:0; }
+  .callout.warn{ background:var(--warn-bg); }
+  .callout.warn .label{ color:var(--warn); }
+
+  .diagram-card{
+    background:var(--bg-raised);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:18px 16px 14px;
+    margin: 18px 0 8px;
+  }
+  .diagram-card .cap{
+    font-size:12.5px; color:var(--ink-dim); text-align:center; margin-top:10px;
+  }
+  .diagram-card svg{ display:block; width:100%; height:auto; }
+  .diagram-card text{ fill: var(--ink); font-family: inherit; }
+  .diagram-card .dim{ fill: var(--ink-dim); }
+  .node-box{ fill: var(--bg-raised); stroke: var(--line); stroke-width:1.3; }
+  .node-box.accent{ fill: var(--accent-bg); stroke: var(--accent); }
+  .node-box.good{ fill: var(--good-bg); stroke: var(--good); }
+  .node-box.bad{ fill: var(--bad-bg); stroke: var(--bad); }
+  .arrow{ stroke: var(--ink-dim); stroke-width:1.4; fill:none; marker-end:url(#arrow); }
+  .arrow.accent{ stroke: var(--accent); }
+  .arrow.removed{ stroke: var(--bad); stroke-dasharray: 4 3; }
+
+  table{ width:100%; border-collapse:collapse; margin:14px 0 20px; font-size:13.8px; }
+  th, td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th{ color:var(--ink-dim); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:.03em; }
+  td code{ font-size:0.86em; }
+  td.after, th.after{ color:var(--good); }
+  td.before, th.before{ color:var(--bad); }
+
+  ol.steps{ padding-left: 0; list-style:none; counter-reset: step; margin: 16px 0; }
+  ol.steps > li{
+    counter-increment: step;
+    position:relative;
+    padding: 2px 0 14px 34px;
+    border-left: 2px solid var(--border);
+    margin-left: 13px;
+  }
+  ol.steps > li:last-child{ border-left-color: transparent; padding-bottom:0; }
+  ol.steps > li::before{
+    content: counter(step);
+    position:absolute; left:-13px; top:0;
+    width:24px; height:24px; border-radius:50%;
+    background:var(--accent); color:#fff;
+    font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  ol.steps h4{ margin:0 0 4px; font-size:14.5px; }
+  ol.steps p{ font-size:14px; margin-bottom:6px; }
+
+  .refs{ font-size:13.4px; }
+  .refs li{ margin-bottom:9px; }
+  @media (max-width: 560px){
+    h1{ font-size:23px; }
+    .wrap{ padding-block: 28px 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-head">
+  <span class="eyebrow">addon-file-summariser</span>
+  <h1>Delivery: from writing straight to InfluxDB to a polled HTTP API</h1>
+  <div class="meta">
+    <span>Explains commits <code>a696319</code> and <code>03515cc</code> &mdash; &ldquo;Write TDMS points using the Sparkplug historian's Influx schema&rdquo; and &ldquo;Add rest api and store&rdquo;</span>
+    <span>Branch <code>dn/influx-format</code></span>
+  </div>
+</header>
+
+<p class="lede">This add-on used to write summarised TDMS points directly into InfluxDB with its own
+measurement/tag shape. It now writes nothing to InfluxDB at all: it stages points locally and serves
+them over a small HTTP API, which a dedicated <code>acs-edge</code> REST connection polls and republishes
+as ordinary Sparkplug metrics &mdash; the same path every other device's data takes, through the normal
+Sparkplug historian. (Auth moved separately in this same branch &mdash; see
+<code>2026-10-26-auth-keytab-to-password.html</code> for that change.)</p>
+
+<h2>Before: a direct InfluxDB write, in its own shape</h2>
+
+<div class="diagram-card">
+<svg viewBox="0 0 560 160" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="dim" style="fill:currentColor;"/>
+    </marker>
+  </defs>
+  <rect x="20" y="30" width="230" height="100" rx="10" class="node-box good"/>
+  <text x="135" y="58" text-anchor="middle" font-size="13" font-weight="600">file-summariser pod</text>
+  <text x="135" y="78" text-anchor="middle" font-size="11.5" class="dim">parses the TDMS file</text>
+  <text x="135" y="94" text-anchor="middle" font-size="11.5" class="dim">lib/influx.js</text>
+  <text x="135" y="110" text-anchor="middle" font-size="11.5" class="dim">@influxdata/influxdb-client</text>
+
+  <path class="arrow accent" d="M250,80 L310,80"/>
+
+  <rect x="310" y="30" width="230" height="100" rx="10" class="node-box accent"/>
+  <text x="425" y="58" text-anchor="middle" font-size="13" font-weight="600">InfluxDB</text>
+  <text x="425" y="78" text-anchor="middle" font-size="11.5" class="dim">measurement tdms_summary</text>
+  <text x="425" y="94" text-anchor="middle" font-size="11.5" class="dim">tags: group, channel</text>
+  <text x="425" y="110" text-anchor="middle" font-size="11.5" class="dim">one measurement for every channel</text>
+</svg>
+<div class="cap">Bypassed the normal Sparkplug/historian pipeline entirely &mdash; this was the only thing in the whole stack writing to InfluxDB directly rather than via Sparkplug.</div>
+</div>
+
+<p>Every row became a point in measurement <code>tdms_summary</code>, tagged with <code>group</code> and
+<code>channel</code> (plus <code>file</code> and <code>topLevelInstance</code>). That shape doesn't match
+how <code>acs-data-access</code> expects to query a device's metrics &mdash; per-metric queries (<code>mean</code>
+in <code>/v1/series</code>, metric-filtered exports) key off the measurement name, and this put every
+channel of every file under the one shared <code>tdms_summary</code> measurement, collapsing them together
+in a whole-device export.</p>
+
+<h2>After: stage locally, serve over HTTP, let Sparkplug carry it the rest of the way</h2>
+
+<div class="diagram-card">
+<svg viewBox="0 0 900 200" xmlns="http://www.w3.org/2000/svg">
+  <rect x="20" y="50" width="200" height="100" rx="10" class="node-box good"/>
+  <text x="120" y="76" text-anchor="middle" font-size="13" font-weight="600">file-summariser pod</text>
+  <text x="120" y="96" text-anchor="middle" font-size="11" class="dim">lib/pending-store.js</text>
+  <text x="120" y="112" text-anchor="middle" font-size="11" class="dim">(PVC, retained 24h default)</text>
+  <text x="120" y="128" text-anchor="middle" font-size="11" class="dim">lib/api.js HTTP API</text>
+
+  <path class="arrow accent" d="M220,100 L270,100"/>
+  <text x="245" y="88" text-anchor="middle" font-size="9.5" class="dim">poll</text>
+
+  <rect x="270" y="50" width="180" height="100" rx="10" class="node-box accent"/>
+  <text x="360" y="80" text-anchor="middle" font-size="13" font-weight="600">acs-edge</text>
+  <text x="360" y="100" text-anchor="middle" font-size="11" class="dim">REST device connection</text>
+  <text x="360" y="118" text-anchor="middle" font-size="11" class="dim">GET /v1/devices/.../channels/...</text>
+  <text x="360" y="134" text-anchor="middle" font-size="11" class="dim">Basic auth, on a timer</text>
+
+  <path class="arrow" d="M450,100 L500,100"/>
+  <text x="475" y="88" text-anchor="middle" font-size="9.5" class="dim">Sparkplug</text>
+
+  <rect x="500" y="50" width="130" height="100" rx="10" class="node-box"/>
+  <text x="565" y="90" text-anchor="middle" font-size="13" font-weight="600">MQTT broker</text>
+  <text x="565" y="110" text-anchor="middle" font-size="11" class="dim">DBIRTH / DDATA</text>
+
+  <path class="arrow" d="M630,100 L680,100"/>
+
+  <rect x="680" y="50" width="100" height="100" rx="10" class="node-box"/>
+  <text x="730" y="90" text-anchor="middle" font-size="12.5" font-weight="600">Sparkplug</text>
+  <text x="730" y="106" text-anchor="middle" font-size="12.5" font-weight="600">historian</text>
+
+  <path class="arrow" d="M780,100 L830,100"/>
+
+  <rect x="830" y="50" width="60" height="100" rx="10" class="node-box good"/>
+  <text x="860" y="95" text-anchor="middle" font-size="12" font-weight="600">Influx</text>
+  <text x="860" y="111" text-anchor="middle" font-size="12" font-weight="600">DB</text>
+</svg>
+<div class="cap">Everything right of the pod is the pipeline every other device's data already goes through &mdash; this add-on now only has to look like one more Sparkplug-publishing device.</div>
+</div>
+
+<h3>Channel naming: borrowing the Sparkplug historian's own convention</h3>
+
+<p>Rather than inventing another shape for the new path, points are named to match
+<code>historian-sparkplug</code>'s own convention: metric <code>&lt;channel&gt;:d</code> (always a float,
+per the <code>:i</code>/<code>:u</code>/<code>:d</code>/<code>:b</code>/<code>:s</code> type-suffix
+convention), published under Sparkplug <code>path</code> <code>&lt;group&gt;</code> &mdash; omitted rather
+than sent empty when a channel has no group. Each channel ends up queryable through
+<code>acs-data-access</code> as <code>&lt;group&gt;/&lt;channel&gt;</code>, the same as any other
+Sparkplug metric on any other device:</p>
+
+<pre><code>// Before (lib/influx.js, deleted)
+measurement: "tdms_summary"
+tags: { group, channel, file, topLevelInstance }
+
+// After (republished via Sparkplug by acs-edge, written by historian-sparkplug)
+metric name: `${channel}:d`
+Sparkplug path: group   // omitted if there is no group
+&rarr; queryable as `${group}/${channel}`</code></pre>
+
+<p>A channel name containing <code>/</code>, or ending in one of the type-suffix tokens itself, will
+collide with this convention and be mis-parsed downstream &mdash; noted in a code comment and in the
+README rather than guarded against. Points summarised under the old <code>tdms_summary</code> shape
+aren't migrated; files summarised before this change need re-summarising to become queryable under
+the new one.</p>
+
+<h3>What the HTTP API actually serves</h3>
+
+<ol class="steps">
+  <li>
+    <h4>Discovery: <code>GET /v1/devices/:device_uuid/channels</code></h4>
+    <p>For an admin wiring up a new device/channel in the Manager, not meant to be polled on a schedule.
+    Each channel gets a stable <code>channel_id</code> &mdash; a hash of <code>group</code>+<code>channel</code>,
+    not the raw names, since TDMS names are free-form and may contain characters unsafe in a URL path.</p>
+  </li>
+  <li>
+    <h4>Polling: <code>GET /v1/devices/:device_uuid/channels/:channel_id</code></h4>
+    <p>Returns points newer than this endpoint's own high-water mark for that channel, advanced on every
+    successful call &mdash; steady-state polling after the first successful delivery returns nothing new
+    rather than replaying the backlog. Always <code>200</code> with <code>[]</code> for nothing pending,
+    never <code>404</code>, so the edge agent's poll loop (any non-<code>200</code> is treated as an error)
+    stays simple.</p>
+  </li>
+  <li>
+    <h4>Retention, not a delivery guarantee</h4>
+    <p>Points are kept and re-served to every poll until <code>retentionHours</code> (default 24) after
+    they were <em>staged</em>, not after their own sample timestamp. InfluxDB overwrites by exact
+    timestamp, so re-delivering something already ingested is wasted work, not corruption &mdash; but
+    something never polled within the window is dropped silently when it ages out.</p>
+  </li>
+  <li>
+    <h4>Basic auth, not Factory+-mediated</h4>
+    <p>The polling endpoint checks <code>API_USERNAME</code>/<code>API_PASSWORD</code> (from a Secret you
+    create yourself, <code>api.authSecret.name</code>) &mdash; unlike this service's own Factory+ calls,
+    this credential has nothing to do with Kerberos/Auth, it's unmediated the same way the InfluxDB token
+    this path replaces used to be.</p>
+  </li>
+</ol>
+
+<h2>Deployment diff at a glance</h2>
+
+<table>
+  <thead>
+    <tr><th>Aspect</th><th class="before">Before</th><th class="after">After</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Where points end up</td><td class="before">Written straight to InfluxDB by this service</td><td class="after">Staged locally, polled by <code>acs-edge</code>, published as Sparkplug, written by <code>historian-sparkplug</code></td></tr>
+    <tr><td>Measurement shape</td><td class="before"><code>tdms_summary</code> + <code>group</code>/<code>channel</code> tags</td><td class="after"><code>&lt;channel&gt;:d</code> + Sparkplug <code>path</code> tag</td></tr>
+    <tr><td>New runtime dependency</td><td class="before"><code>@influxdata/influxdb-client</code></td><td class="after">a persistent pending-points PVC, a <code>Service</code> for the HTTP API</td></tr>
+    <tr><td>Local state</td><td class="before">none &mdash; fire-and-forget writes</td><td class="after">pending-points store on disk, pruned after <code>retentionHours</code></td></tr>
+    <tr><td>Per-metric queryability</td><td class="before">No &mdash; every channel shared one measurement</td><td class="after">Yes &mdash; same convention as any other Sparkplug metric</td></tr>
+    <tr><td>New chart resources</td><td class="before">&mdash;</td><td class="after"><code>pending-pvc.yaml</code>, <code>service.yaml</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Why this is considered better</h2>
+
+<div class="callout">
+  <span class="label">From the commit message</span>
+  <p>&ldquo;Points were written as measurement <code>tdms_summary</code> with <code>group</code>/<code>channel</code>
+  tags, which <code>acs-data-access</code> can't match for per-metric queries (<code>mean</code> in
+  <code>/v1/series</code>, metric-filtered exports) and which collapses every channel into one metric in
+  whole-device exports.&rdquo;</p>
+</div>
+
+<div class="callout warn">
+  <span class="label">Trade-off, stated explicitly</span>
+  <p>This add-on now keeps local state (the pending-points store) and depends on something else
+  (<code>acs-edge</code>) actually polling it within <code>retentionHours</code> or data is silently
+  dropped &mdash; a fire-and-forget direct write never had that failure mode. In exchange, data now goes
+  through the same pipeline, with the same per-metric query shape, as everything else in the stack.</p>
+</div>
+
+<h2>References</h2>
+<ul class="refs">
+  <li><code>lib/pending-store.js</code> &mdash; the local staging store (added)</li>
+  <li><code>lib/api.js</code> &mdash; the polling HTTP API (added)</li>
+  <li><code>lib/influx.js</code> &mdash; the old direct-write path (deleted)</li>
+  <li><code>lib/summarisers/tdms.js</code>, <code>lib/job.js</code> &mdash; channel naming / row shape</li>
+  <li><code>deploy/templates/pending-pvc.yaml</code>, <code>deploy/templates/service.yaml</code> &mdash; new chart resources for this</li>
+  <li>README.md's <a href="../../README.md#http-api">HTTP API</a> section &mdash; full endpoint reference</li>
+  <li><code>docs/plans/2026-10-21-tdms-summary-edge-agent-ingestion.{md,html}</code> in <code>amrc-connectivity-stack</code> &mdash; the full design, including the Manager-side <code>acs-edge</code> setup</li>
+  <li>Commits <code>a696319</code> &ldquo;Write TDMS points using the Sparkplug historian's Influx schema&rdquo; and <code>03515cc</code> &ldquo;Add rest api and store&rdquo;</li>
+</ul>
+
+</div>
+</body>
+</html>
