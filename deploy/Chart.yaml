@@ -5,9 +5,10 @@ name: addon-file-summariser
 icon: https://www.sheffield.ac.uk/themes/custom/uos/favicon.svg
 description: >
   Optional Factory+ add-on which watches ConfigDB for registered files
-  (e.g. TDMS waveform captures) and writes downsampled summaries into
-  InfluxDB. Installed as a standalone release into its own namespace,
-  alongside an existing central AMRC Connectivity Stack deployment.
+  (e.g. TDMS waveform captures), downsamples them, and serves the summary
+  over HTTP for a polling acs-edge instance to republish as Sparkplug.
+  Installed as a standalone release into its own namespace, alongside an
+  existing central AMRC Connectivity Stack deployment.
 home: factoryplus.app.amrc.co.uk
 type: application
 keywords:
